@@ -1,7 +1,4 @@
 #!/bin/bash
-
-set -e
-
 APP_JAR=/home/ubuntu/myapp/mysite.jar
 
 echo "[중지] 실행 중인 Spring Boot 애플리케이션 종료 시도"
