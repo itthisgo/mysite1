@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -e
+
 APP_JAR=/home/ubuntu/myapp/mysite.jar
 
 echo "[중지] 실행 중인 Spring Boot 애플리케이션 종료 시도"
@@ -19,5 +22,3 @@ if [ -n "$PID" ]; then
 else
   echo "[중지] 실행 중인 애플리케이션이 없습니다"
 fi
-
-exit 0  # 항상 성공 종료
