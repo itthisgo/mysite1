@@ -1,55 +1,86 @@
-name: CI/CD for Spring Boot to EC2 via CodeDeploy
+name: AMI 기반 롤링 업데이트
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-roll-update:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout Source Code
       uses: actions/checkout@v3
 
-    - name: Set up JDK
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: '17'  # 버전에 맞게 변경
-
-    - name: Build JAR
+    - name: Build Spring Boot JAR
       run: ./gradlew clean bootJar -x test
+    
+    - name: 확인
+      run: ls -al build/libs
 
-    - name: Package deployment zip
+    - name: Upload Artifact to S3
       run: |
-        mkdir -p deploy
-        cp appspec.yml deploy/
-        cp $(find build/libs -name "*.jar" | head -n 1) deploy/mysite.jar
-        cp -r scripts deploy/
-        cd deploy && zip -r ../deploy-package.zip . && cd ..
-
-    - name: Upload to S3
-      run: |
-        aws s3 cp deploy-package.zip s3://$S3_BUCKET_NAME/deploy-package.zip
+        aws s3 cp build/libs/mysite-0.0.1-SNAPSHOT.jar s3://$S3_BUCKET_NAME/mysite.jar
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: ${{ secrets.AWS_REGION }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
 
-    - name: Trigger CodeDeploy
+    - name: Build New AMI with Packer
       run: |
-        aws deploy create-deployment \
-          --application-name $CODEDEPLOY_APP_NAME \
-          --deployment-group-name $CODEDEPLOY_GROUP_NAME \
-          --s3-location bucket=$S3_BUCKET_NAME,bundleType=zip,key=deploy-package.zip \
-          --deployment-config-name CodeDeployDefault.AllAtOnce \
-          --region $AWS_REGION
+        packer init ami.pkr.hcl
+        packer build \
+          -var "s3_bucket=${{ secrets.S3_BUCKET_NAME }}" \
+          -var "db_url=${{ secrets.SPRING_DATASOURCE_URL }}" \
+          -var "db_username=${{ secrets.SPRING_DATASOURCE_USERNAME }}" \
+          -var "db_password=${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
+          -var "upload_path=${{ secrets.UPLOAD_PATH }}" \
+          ami.pkr.hcl
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: ${{ secrets.AWS_REGION }}
-        CODEDEPLOY_APP_NAME: ${{ secrets.CODEDEPLOY_APP_NAME }}
-        CODEDEPLOY_GROUP_NAME: ${{ secrets.CODEDEPLOY_GROUP_NAME }}
-        S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+    - name: Get Latest AMI ID
+      id: ami
+      run: |
+        AMI_ID=$(aws ec2 describe-images --owners self --filters "Name=name,Values=mysite-app-*" --query "Images | sort_by(@, &CreationDate)[-1].ImageId" --output text)
+        echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+    - name: Get Latest Launch Template Version
+      id: lt
+      run: |
+        LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
+          --launch-template-id lt-0b58e75228ff8abeb \
+          --query 'LaunchTemplateVersions[-1].VersionNumber' --output text)
+        echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+    - name: Create New Launch Template Version
+      run: |
+        aws ec2 create-launch-template-version \
+          --launch-template-id lt-0b58e75228ff8abeb \
+          --source-version ${{ env.LATEST_VERSION }} \
+          --launch-template-data "{\"ImageId\":\"${{ env.AMI_ID }}\"}"
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+    - name: Trigger ASG Rolling Update
+      run: |
+        aws autoscaling start-instance-refresh \
+          --auto-scaling-group-name mysite-app-asg \
+          --strategy Rolling
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
