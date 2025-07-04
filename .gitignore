@@ -1,0 +1,25 @@
+# gradle wrapper jar는 제외하지 않음
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+*.jar
+
+# Gradle
+/build
+.gradle/
+
+# STS
+/.settings
+/.classpath
+/.project
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
