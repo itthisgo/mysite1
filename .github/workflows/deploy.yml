@@ -56,7 +56,7 @@ jobs:
       run: |
         LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
             --launch-template-id lt-0b58e75228ff8abeb \
-            --query --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
+            --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
         
         echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
         echo "현재 최신 버전: $LATEST_VERSION"
