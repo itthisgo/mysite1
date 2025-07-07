@@ -84,7 +84,7 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-        
+
     - name: Wait for AWS to Reflect New Version
       run: sleep 5
 
@@ -108,6 +108,21 @@ jobs:
         aws ec2 modify-launch-template \
           --launch-template-id lt-0b58e75228ff8abeb \
           --default-version $LATEST_VERSION
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+    - name: Check Existing Instance Refresh
+      run: |
+        STATUS=$(aws autoscaling describe-instance-refreshes \
+          --auto-scaling-group-name my-asg \
+          --query 'InstanceRefreshes[0].Status' --output text)
+
+        if [ "$STATUS" = "InProgress" ]; then
+          echo "기존 롤링 업데이트 진행 중, 스킵"
+          exit 0
+        fi
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
