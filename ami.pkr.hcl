@@ -49,7 +49,7 @@ source "amazon-ebs" "mysite_ami" {
   ssh_username                = "ubuntu"
   ami_name                    = "mysite-app-{{timestamp}}"
   associate_public_ip_address = true
-  iam_instance_profile        = "my-ec2-code-deploy-role"
+  iam_instance_profile        = "mysiteRole"
 
   tags = {
     Name = "mysite-packer-ami"
