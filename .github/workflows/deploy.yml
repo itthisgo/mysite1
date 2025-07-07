@@ -94,11 +94,14 @@ jobs:
           --launch-template-id lt-0b58e75228ff8abeb \
           --query 'LaunchTemplateVersions[-1].VersionNumber' --output text)
         
+        echo "신규 버전: $LATEST_VERSION"
+
         aws ec2 modify-launch-template \
           --launch-template-id lt-0b58e75228ff8abeb \
           --default-version $LATEST_VERSION
 
         echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
+        echo "디폴트 버전: $LATEST_VERSION"
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

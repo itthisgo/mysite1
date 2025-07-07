@@ -83,7 +83,8 @@ build {
       "echo \"Environment=SPRING_DATASOURCE_USERNAME=${var.db_username}\" | sudo tee -a /etc/systemd/system/mysite.service",
       "echo \"Environment=SPRING_DATASOURCE_PASSWORD=${var.db_password}\" | sudo tee -a /etc/systemd/system/mysite.service",
       "echo \"Environment=UPLOAD_PATH=${var.upload_path}\" | sudo tee -a /etc/systemd/system/mysite.service",
-      "echo 'ExecStart=/usr/bin/java -jar /home/ubuntu/myapp/mysite.jar' | sudo tee -a /etc/systemd/system/mysite.service",
+      "echo 'ExecStart=/usr/bin/java -jar /home/ubuntu/myapp/mysite.jar > /home/ubuntu/myapp/app.log 2>&1' | sudo tee -a /etc/systemd/system/mysite.service",
+
       "echo 'Restart=always' | sudo tee -a /etc/systemd/system/mysite.service",
       "echo 'RestartSec=5' | sudo tee -a /etc/systemd/system/mysite.service",
 
