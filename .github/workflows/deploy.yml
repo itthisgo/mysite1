@@ -58,7 +58,6 @@ jobs:
             --launch-template-id lt-0b58e75228ff8abeb \
             --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
         
-        echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
         echo "현재 최신 버전: $LATEST_VERSION"
 
         aws ec2 create-launch-template-version \
@@ -85,13 +84,16 @@ jobs:
 
     - name: Get and Update Latest Launch Template Version
       run: |
-        echo "신규 버전: ${{ env.LATEST_VERSION }}"
+        LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
+              --launch-template-id lt-0b58e75228ff8abeb \
+              --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
+        
+        echo "신규 버전: $LATEST_VERSION"
 
         aws ec2 modify-launch-template \
           --launch-template-id lt-0b58e75228ff8abeb \
-          --default-version ${{ env.LATEST_VERSION }}
+          --default-version $LATEST_VERSION
 
-        echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
         echo "변경된 디폴트 버전: $LATEST_VERSION"
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
