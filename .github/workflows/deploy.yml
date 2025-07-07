@@ -70,7 +70,7 @@ jobs:
           --launch-template-id lt-0b58e75228ff8abeb \
           --source-version ${{ env.LATEST_VERSION }} \
           --launch-template-data "{
-            \"ImageId\": \"env.AMI_ID\",
+            \"ImageId\": \"${{ env.AMI_ID }}\",
             \"TagSpecifications\": [
               {
                 \"ResourceType\": \"instance\",
