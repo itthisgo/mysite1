@@ -63,7 +63,7 @@ jobs:
 
         aws ec2 create-launch-template-version \
           --launch-template-id lt-0b58e75228ff8abeb \
-          --source-version ${{ env.LATEST_VERSION }} \
+          --source-version $LATEST_VERSION \
           --launch-template-data "{
             \"ImageId\": \"${{ env.AMI_ID }}\",
             \"TagSpecifications\": [
