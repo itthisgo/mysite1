@@ -12,7 +12,7 @@ jobs:
     env:
       AWS_REGION: ap-northeast-2
       ECR_REPOSITORY: my-springboot-app
-      IMAGE_TAG: latest
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - name: Checkout source
@@ -53,4 +53,8 @@ jobs:
         run: |
           aws eks update-kubeconfig --region $AWS_REGION --name mysite-cluster
           kubectl set image deployment/springboot-deploy \
-            springboot-container=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+            springboot-container=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+            
+      - name: Wait for rollout to finish
+        run: |
+          kubectl rollout status deployment/springboot-deploy
