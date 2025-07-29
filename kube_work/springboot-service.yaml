@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: springboot-service
+  labels:
+    app: springboot
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80           # 외부에서 접근할 포트 (예: http://<LB주소>:80)
+      targetPort: 8080   # Spring Boot 컨테이너 내부 포트
+  selector:
+    app: springboot

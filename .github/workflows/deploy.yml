@@ -1,126 +1,54 @@
-name: AMI 기반 롤링 업데이트
+name: CI/CD to EKS
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
-  build-and-roll-update:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REPOSITORY: my-springboot-app
+      IMAGE_TAG: latest
+
     steps:
-    - name: Checkout Source Code
-      uses: actions/checkout@v3
+      - name: Checkout source
+        uses: actions/checkout@v3
 
-    - name: Build Spring Boot JAR
-      run: ./gradlew clean bootJar -x test
-    
-    - name: 확인
-      run: ls -al build/libs
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    - name: Upload Artifact to S3
-      run: |
-        aws s3 cp build/libs/mysite-0.0.1-SNAPSHOT.jar s3://$S3_BUCKET_NAME/mysite.jar
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-        S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+      - name: Build with Gradle
+        run: ./gradlew build -x test
 
-    - name: Build New AMI with Packer
-      run: |
-        packer init ami.pkr.hcl
-        packer build \
-          -var "s3_bucket=${{ secrets.S3_BUCKET_NAME }}" \
-          -var "db_url=${{ secrets.SPRING_DATASOURCE_URL }}" \
-          -var "db_username=${{ secrets.SPRING_DATASOURCE_USERNAME }}" \
-          -var "db_password=${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
-          -var "upload_path=${{ secrets.UPLOAD_PATH }}" \
-          ami.pkr.hcl
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Get Latest AMI ID
-      id: ami
-      run: |
-        AMI_ID=$(aws ec2 describe-images --owners self --filters "Name=name,Values=mysite-app-*" --query "Images | sort_by(@, &CreationDate)[-1].ImageId" --output text)
-        echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Create New Launch Template Version
-      run: |
-        LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
-            --launch-template-id lt-0b58e75228ff8abeb \
-            --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
-        
-        echo "현재 최신 버전: $LATEST_VERSION"
+      - name: Build Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
 
-        aws ec2 create-launch-template-version \
-          --launch-template-id lt-0b58e75228ff8abeb \
-          --source-version $LATEST_VERSION \
-          --launch-template-data "{
-            \"ImageId\": \"${{ env.AMI_ID }}\",
-            \"TagSpecifications\": [
-              {
-                \"ResourceType\": \"instance\",
-                \"Tags\": [
-                  { \"Key\": \"Name\", \"Value\": \"mysiteEC2private\" }
-                ]
-              }
-            ]
-          }"
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      - name: Push to Amazon ECR
+        run: |
+          docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
 
-    - name: Wait for AWS to Reflect New Version
-      run: sleep 5
-
-    - name: Get and Update Latest Launch Template Version
-      run: |
-        LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
-              --launch-template-id lt-0b58e75228ff8abeb \
-              --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' --output text)
-        
-        echo "신규 버전: $LATEST_VERSION"
-
-        aws ec2 modify-launch-template \
-          --launch-template-id lt-0b58e75228ff8abeb \
-          --default-version $LATEST_VERSION
-
-        echo "변경된 디폴트 버전: $LATEST_VERSION"
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-    - name: Check Existing Instance Refresh
-      run: |
-        STATUS=$(aws autoscaling describe-instance-refreshes \
-          --auto-scaling-group-name my-asg \
-          --query 'InstanceRefreshes[0].Status' --output text)
-
-        if [ "$STATUS" = "InProgress" ]; then
-          echo "기존 롤링 업데이트 진행 중, 스킵"
-          exit 0
-        fi
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-    - name: Trigger ASG Rolling Update
-      run: |
-        aws autoscaling start-instance-refresh \
-          --auto-scaling-group-name my-asg \
-          --strategy Rolling
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      - name: Update image in Kubernetes deployment
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name mysite-cluster
+          kubectl set image deployment/springboot-deploy \
+            springboot-container=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG

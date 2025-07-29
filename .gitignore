@@ -23,3 +23,9 @@
 .DS_Store
 Thumbs.db
 
+# EKS 구성 파일 제외
+/kube_work/efs-pv.yaml
+/kube_work/efs-pvc.yaml
+/kube_work/db-config.yaml
+/kube_work/db-secret.yaml
+
